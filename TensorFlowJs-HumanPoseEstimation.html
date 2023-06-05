@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>PoseNet Demo</title>
+    <style>
+      #video-container {
+        position: relative;
+      }
+
+      #video {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+
+      #canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="video-container">
+      <video id="video" width="640" height="480" autoplay></video>
+      <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <script src="https://unpkg.com/@tensorflow/tfjs"></script>
+    <script src="https://unpkg.com/@tensorflow-models/posenet"></script>
+    <script>
+      const videoElement = document.getElementById('video');
+      const canvasElement = document.getElementById('canvas');
+      const canvasCtx = canvasElement.getContext('2d');
+
+      async function setupCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Browser API navigator.mediaDevices.getUserMedia not available');
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoElement.srcObject = stream;
+
+        return new Promise((resolve) => {
+          videoElement.onloadedmetadata = () => {
+            videoElement.width = videoElement.videoWidth;
+            videoElement.height = videoElement.videoHeight;
+            resolve(videoElement);
+          };
+        });
+      }
+
+      function detectPoseInRealTime(net) {
+        const imageScaleFactor = 0.50;
+        const flipHorizontal = false;
+        const outputStride = 16;
+
+        async function poseDetectionFrame() {
+          const pose = await net.estimateSinglePose(videoElement, imageScaleFactor, flipHorizontal, outputStride);
+
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+          canvasCtx.drawImage(videoElement, 0, 0);
+          drawKeypoints(pose.keypoints);
+          drawSkeleton(pose.keypoints);
+
+          requestAnimationFrame(poseDetectionFrame);
+        }
+
+        poseDetectionFrame();
+      }
+
+      function drawKeypoints(keypoints) {
+        for (let i = 0; i < keypoints.length; i++) {
+          const keypoint = keypoints[i];
+          const { x, y } = keypoint.position;
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, 3, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = 'red';
+          canvasCtx.fill();
+        }
+      }
+
+      function drawSkeleton(keypoints) {
+        const adjacentKeyPoints = posenet.getAdjacentKeyPoints(keypoints);
+
+        for (let i = 0; i < adjacentKeyPoints.length; i++) {
+          const [pointA, pointB] = adjacentKeyPoints[i];
+
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(pointA.position.x, pointA.position.y);
+          canvasCtx.lineTo(pointB.position.x, pointB.position.y);
+          canvasCtx.lineWidth = 2;
+          canvasCtx.strokeStyle = 'red';
+          canvasCtx.stroke();
+        }
+      }
+
+      async function run() {
+        const net = await posenet.load();
+
+        await setupCamera();
+        videoElement.play();
+
+        detectPoseInRealTime(net);
+      }
+
+      run();
+    </script>
+  </body>
+</html>
